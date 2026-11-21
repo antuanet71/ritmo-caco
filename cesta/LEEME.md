@@ -42,7 +42,7 @@ Un toque añade, cada toque más suma uno, y con doble toque (o manteniendo puls
 ## Editar a mano en la hoja
 
 - En **Productos** basta con escribir el nombre, la categoría y el súper **por su nombre** (por ejemplo `Champú`, `Higiene`, `Mercadona`). La app completa el resto al abrirse.
-- Para ocultar un producto, pon `FALSE` en `activo`.
+- Para quitar productos: en la app, Ajustes › Catálogo › «Quitar productos del catálogo» y tocarlos. En la hoja, poner `FALSE` en `activo`.
 - Los logos disponibles para la columna `logo` de Supers: `mercadona`, `lidl`, `aldi`, `alimerka`, `froiz`, `gadis`, `elcorte`.
 
 ## Actualizar a una versión nueva

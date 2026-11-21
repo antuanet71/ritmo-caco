@@ -5,9 +5,12 @@
   --font:"Figtree",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   color-scheme:light;
 }
-@media (prefers-color-scheme: dark){:root{
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --bg:#111D19; --surface:#16231F; --ink:#E6EFEA; --muted:#9AB0A7; --line:#2A3B35;
   --accent:#4CC08D; --accent-ink:#0B1A14; --brick:#1C2B26; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#111D19; --surface:#16231F; --ink:#E6EFEA; --muted:#9AB0A7; --line:#2A3B35;
+  --accent:#4CC08D; --accent-ink:#0B1A14; --brick:#1C2B26; color-scheme:dark}
 *{box-sizing:border-box}
 html,body{height:100%;margin:0}
 body{background:var(--bg);color:var(--ink);font-family:var(--font);font-size:calc(15px*var(--k));line-height:1.4;
@@ -47,6 +50,8 @@ button:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(-
 .b.done{background:var(--brick);border-color:var(--line);color:var(--muted);text-decoration:line-through}
 .b.done .lg{opacity:.4}
 .b.sel{box-shadow:0 0 0 2px var(--bg),0 0 0 4px var(--s,var(--accent))}
+.b.kill{border:1.5px dashed var(--danger);color:var(--danger)}
+.b.kill .pl{color:var(--danger)}
 .b.dash{border-style:dashed;color:var(--muted)}
 .b.addb{padding:2px 2px 2px 7px}
 .b.addb input{border:0;background:none;font:inherit;color:var(--ink);outline:0;width:110px;font-size:calc(16px*var(--k))}
