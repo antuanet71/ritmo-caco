@@ -12,4 +12,4 @@ El código está en `src/`. `python3 build.py` (desde `src/`) genera `standalone
 
 ## Cesta (lista de la compra familiar)
 
-En `cesta/` hay otra app independiente: la lista de la compra compartida por familias, con Google Sheets de backend. Ver `cesta/LEEME.md`.
+En `cesta/` hay otra app independiente: la lista de la compra de la familia, que vive en una hoja de Google con su script. Ver `cesta/LEEME.md`.

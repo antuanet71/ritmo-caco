@@ -1,11 +1,11 @@
 /* Cesta: lista de la compra familiar. Frontend sin dependencias.
-   Backend: Apps Script + una hoja de Google por familia (ver backend/Code.gs).
-   Sin apiUrl en config.js funciona en modo prueba, guardando en este móvil. */
+   Dentro de Google: la sirve el script de la hoja de la familia (backend/Code.gs) y habla con él con google.script.run.
+   Fuera de Google (GitHub Pages) funciona en modo prueba, guardando solo en este móvil. */
 (function () {
 'use strict';
 
-const CFG = window.CESTA_CONFIG || {};
-const DEMO = !CFG.apiUrl;
+const GAS = !!(window.google && google.script && google.script.run);
+const DEMO = !GAS;
 
 /* ---------- utilidades ---------- */
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -32,7 +32,8 @@ const BRANDS = {
   gadis: { n: 'Gadis', c: '#3B1214' },
   elcorte: { n: 'El Corte Inglés', c: '#00843D' }
 };
-const logoUrl = l => (l && BRANDS[l]) ? 'logos/' + l + '.png' : '';
+const LOGOS = window.CESTA_LOGOS || null;
+const logoUrl = l => (l && BRANDS[l]) ? (LOGOS ? LOGOS[l] : 'logos/' + l + '.png') : '';
 const PALETTE = ['#3B6FD8', '#D9467A', '#E08A1E', '#2E9E6A', '#7A5BD6', '#0E9AA7', '#C8372D', '#8A6B4E', '#6B7A75', '#D4A20B', '#1E8E57', '#0050AA'];
 
 /* Catálogo inicial (de la lista de ejemplo). Igual que en backend/Code.gs */
@@ -107,90 +108,67 @@ function cleanState(f) {
 
 /* ---------- modo prueba (sin servidor) ---------- */
 const Demo = {
-  db() { return LS.get('demo', null) || { families: {} }; },
-  save(d) { LS.set('demo', d); },
   async call(action, p) {
     await new Promise(r => setTimeout(r, 80));
-    const d = this.db(); const me = S.user || { email: 'prueba', nombre: 'Tú' };
-    const pub = f => ({ id: f.id, nombre: f.nombre, codigo: f.codigo });
-    switch (action) {
-      case 'login': return { session: 'demo', user: { email: 'prueba', nombre: p.nombre || 'Tú' } };
-      case 'me': return { user: me, families: Object.values(d.families).map(pub) };
-      case 'createFamily': { const f = newFamilyState(uid('f'), p.nombre, p.persona); d.families[f.id] = f; this.save(d); return { family: pub(f) }; }
-      case 'joinFamily': {
-        const f = Object.values(d.families).find(x => x.codigo === String(p.codigo || '').trim().toUpperCase());
-        if (!f) throw new Error('No hay ninguna familia con ese código.');
-        return { family: pub(f) };
-      }
-      case 'load': { const f = d.families[p.familyId]; if (!f) throw new Error('No encuentro esa familia.'); return { state: cleanState(f) }; }
-      case 'ops': { const f = d.families[p.familyId]; p.ops.forEach(o => applyOp(f, o, me.email)); this.save(d); return { state: cleanState(f) }; }
-      case 'logout': return {};
-    }
+    let f = LS.get('demo', null);
+    if (!f) { f = newFamilyState('fam', 'Casa (prueba)', 'Yo'); LS.set('demo', f); }
+    if (action === 'load') return { state: Object.assign(cleanState(f), { user: { email: 'prueba', nombre: 'Tú' } }) };
+    if (action === 'ops') { p.ops.forEach(o => applyOp(f, o, 'prueba')); LS.set('demo', f); return { state: Object.assign(cleanState(f), { user: { email: 'prueba', nombre: 'Tú' } }) }; }
     throw new Error('Acción desconocida');
   }
 };
 
 /* ---------- estado ---------- */
+const FAM = 'fam';
 const S = {
-  session: LS.get('session', null), user: LS.get('user', null),
-  families: LS.get('families', []), famId: LS.get('famId', null), fam: null,
-  pending: LS.get('pending', []), inflight: false, offline: false,
-  view: 'catalog', mode: null, pop: null, sheet: null, adding: null, toast: null, err: ''
+  user: null, fam: LS.get('fam', null), pending: LS.get('pending', []), inflight: false, offline: false,
+  view: 'catalog', pop: null, sheet: null, adding: null, toast: null, err: '', noauth: ''
 };
-if (S.famId) S.fam = LS.get('fam:' + S.famId, null);
 
-async function api(action, payload) {
+function api(action, payload) {
   if (DEMO) return Demo.call(action, payload || {});
-  const res = await fetch(CFG.apiUrl, {
-    method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify(Object.assign({ action, session: S.session }, payload || {}))
+  return new Promise((resolve, reject) => {
+    google.script.run
+      .withSuccessHandler(resolve)
+      .withFailureHandler(err => {
+        const m = String((err && err.message) || err || '');
+        const e = new Error(m.replace(/^.*NOAUTH:\s*/, ''));
+        if (/NOAUTH/.test(m)) e.code = 'noauth';
+        else if (/network|red|NetworkError|conexi/i.test(m)) e.code = '';
+        else e.code = 'error';
+        reject(e);
+      })
+      .api(action, payload || {});
   });
-  const j = await res.json();
-  if (j.error) {
-    if (j.error === 'auth' && action !== 'login') { logout(true); }
-    const e = new Error(j.message || j.error); e.code = j.error; throw e;
-  }
-  return j;
 }
 
 /* ---------- arranque y sincronización ---------- */
-async function boot() {
-  render();
-  if (!S.session) return;
-  try {
-    const r = await api('me');
-    S.user = r.user; S.families = r.families; S.offline = false;
-    LS.set('user', S.user); LS.set('families', S.families);
-    if (!S.families.some(f => f.id === S.famId)) setFam(S.families[0] ? S.families[0].id : null);
-  } catch (e) { if (e.code) { S.err = e.message; } else S.offline = true; }
-  render();
-  if (S.famId) await refresh();
-}
-function setFam(id) {
-  S.famId = id; LS.set('famId', id);
-  S.fam = id ? LS.get('fam:' + id, null) : null;
-}
-function pendingFor(id) { return S.pending.filter(p => p.famId === id); }
+function boot() { render(); refresh(); }
+function pendingFor() { return S.pending; }
 function adopt(state) {
   const st = state;
-  pendingFor(st.id).forEach(p => applyOp(st, p.op, S.user && S.user.email));
-  S.fam = st; LS.set('fam:' + st.id, st);
+  if (st.user) S.user = st.user;
+  S.pending.forEach(p => applyOp(st, p.op, S.user && S.user.email));
+  S.fam = st; LS.set('fam', st);
 }
 async function refresh() {
-  if (!S.famId || S.inflight) return;
-  if (pendingFor(S.famId).length) return flush();
-  const id = S.famId;
+  if (S.inflight) return;
+  if (S.pending.length) return flush();
   try {
-    const r = await api('load', { familyId: id });
-    S.offline = false;
-    if (id === S.famId && !S.inflight && !pendingFor(id).length) { adopt(r.state); render(); }
-  } catch (e) { if (!e.code) { S.offline = true; render(); } else if (e.code === 'forbidden') { S.err = e.message; render(); } }
+    const r = await api('load');
+    S.offline = false; S.noauth = '';
+    if (!S.inflight && !S.pending.length) { adopt(r.state); render(true); }
+  } catch (e) {
+    if (e.code === 'noauth') { S.noauth = e.message; S.fam = null; LS.del('fam'); render(); }
+    else if (!e.code) { S.offline = true; render(true); }
+    else { S.err = e.message; render(true); }
+  }
 }
 function doOp(op) {
   if (!S.fam) return;
   applyOp(S.fam, op, S.user && S.user.email);
-  S.pending.push({ famId: S.fam.id, op });
-  LS.set('pending', S.pending); LS.set('fam:' + S.fam.id, S.fam);
+  S.pending.push({ famId: FAM, op });
+  LS.set('pending', S.pending); LS.set('fam', S.fam);
   render(true);
   flushSoon();
 }
@@ -198,53 +176,25 @@ let flushT = null;
 function flushSoon() { clearTimeout(flushT); flushT = setTimeout(flush, 600); }
 async function flush() {
   if (S.inflight) return;
-  const famId = S.famId; const batch = pendingFor(famId);
+  const batch = S.pending.slice();
   if (!batch.length) return;
   S.inflight = true; render(true);
   try {
-    const r = await api('ops', { familyId: famId, ops: batch.map(b => b.op) });
+    const r = await api('ops', { ops: batch.map(b => b.op) });
     S.pending = S.pending.filter(p => !batch.includes(p)); LS.set('pending', S.pending);
     S.offline = false; S.inflight = false;
-    if (famId === S.famId) adopt(r.state);
+    adopt(r.state);
   } catch (e) {
     S.inflight = false;
     if (e.code) { S.pending = S.pending.filter(p => !batch.includes(p)); LS.set('pending', S.pending); toast('No se ha podido guardar: ' + e.message); refresh(); }
     else { S.offline = true; setTimeout(flush, 8000); }
   }
   render(true);
-  if (pendingFor(S.famId).length) flushSoon();
+  if (S.pending.length) flushSoon();
 }
-setInterval(() => { if (document.visibilityState === 'visible' && S.session) refresh(); }, 15000);
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && S.session) refresh(); });
-window.addEventListener('online', () => { if (S.session) flush(); });
-
-/* ---------- sesión ---------- */
-async function loginWith(payload) {
-  S.err = ''; render();
-  try {
-    const r = await api('login', payload);
-    S.session = r.session; S.user = r.user; LS.set('session', S.session); LS.set('user', S.user);
-    await boot();
-  } catch (e) { S.err = e.code ? e.message : 'Sin conexión. Inténtalo de nuevo.'; render(); }
-}
-function logout(expired) {
-  if (!expired && S.session && !DEMO) api('logout').catch(() => {});
-  S.session = null; S.user = null; S.families = []; S.fam = null; S.famId = null; S.pending = [];
-  ['session', 'user', 'families', 'famId', 'pending'].forEach(k => LS.del(k));
-  S.view = 'catalog'; S.pop = null; S.sheet = null;
-  if (expired) S.err = 'Tu sesión ha caducado. Entra de nuevo.';
-  render();
-}
-let gsiReady = false;
-function mountGoogleButton() {
-  const el = document.getElementById('gbtn'); if (!el || DEMO) return;
-  if (!(window.google && google.accounts && google.accounts.id)) { setTimeout(mountGoogleButton, 300); return; }
-  if (!gsiReady) {
-    google.accounts.id.initialize({ client_id: CFG.clientId, callback: r => loginWith({ idToken: r.credential }), ux_mode: 'popup', auto_select: false });
-    gsiReady = true;
-  }
-  google.accounts.id.renderButton(el, { theme: 'filled_blue', size: 'large', shape: 'pill', text: 'continue_with', locale: 'es', width: 280 });
-}
+setInterval(() => { if (document.visibilityState === 'visible') refresh(); }, 15000);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refresh(); });
+window.addEventListener('online', () => flush());
 
 /* ---------- datos derivados ---------- */
 const F = () => S.fam;
@@ -266,36 +216,17 @@ const IC = {
 const logoImg = (s, cls) => logoUrl(s.logo) ? `<img class="${cls || 'lg'}" src="${logoUrl(s.logo)}" alt="">` : '';
 
 /* ---------- vistas ---------- */
-function vLogin() {
-  const wall = ['#4E9A2A', '#C94848', '#C48A1C', '#3D6FC2', '#1A8C93', '#1E8E57', '#E5A800', '#0050AA', '#E31E24']
-    .map((c, i) => `<span style="background:${c};width:${[54, 38, 70, 46, 30, 62, 42, 50, 36][i]}px"></span>`).join('');
+function vNoAuth() {
   return `<div class="hero">
-    <div class="logo-wall">${wall}</div>
+    <div class="logo-wall">${['#4E9A2A', '#C94848', '#C48A1C', '#3D6FC2', '#1A8C93', '#1E8E57'].map((c, i) => `<span style="background:${c};width:${[54, 38, 70, 46, 30, 62][i]}px"></span>`).join('')}</div>
     <h1>Cesta</h1>
-    <p>La lista de la compra de la familia. Toca lo que se acaba y, en el súper, tacha lo que compras.</p>
-    ${DEMO ? `<div class="card" style="--c:#C48A1C"><b>Modo prueba</b><span class="count" style="white-space:normal">Aún no está conectada a Google. Lo que hagas se guarda solo en este móvil.</span>
-        <div class="row"><input class="in" id="demoName" placeholder="Tu nombre" autocomplete="given-name"><button class="btn pri" data-act="demoLogin">Entrar</button></div></div>`
-      : `<div id="gbtn" style="min-height:44px"></div><p class="count" style="white-space:normal">Entra con tu cuenta de Google (Gmail). Solo verás las familias a las que te hayan invitado.</p>`}
-    ${S.err ? `<div class="err">${esc(S.err)}</div>` : ''}
-  </div>`;
-}
-function vOnboard() {
-  const first = S.user && S.user.nombre ? String(S.user.nombre).split(' ')[0] : '';
-  return `<div class="hero">
-    <h1 style="font-size:30px">${S.families.length ? 'Otra familia' : 'Hola' + (first ? ', ' + esc(first) : '')}</h1>
-    <p>Crea la lista de tu familia o únete a una con el código que te pasen.</p>
-    <div class="card" style="--c:var(--accent)"><b>Crear una familia</b>
-      <input class="in" id="fNombre" placeholder="Nombre, por ejemplo Casa Gutiérrez">
-      <input class="in" id="fPersona" placeholder="Tu nombre en la lista" value="${esc(first)}">
-      <button class="btn pri" data-act="createFam">Crear con el catálogo de ejemplo</button></div>
-    <div class="card" style="--c:#3D6FC2"><b>Unirme con un código</b>
-      <div class="row"><input class="in" id="fCodigo" placeholder="CESTA-XXXX" autocapitalize="characters"><button class="btn pri" data-act="joinFam">Unirme</button></div></div>
-    ${S.err ? `<div class="err">${esc(S.err)}</div>` : ''}
-    <div class="row" style="justify-content:space-between">${S.families.length ? '<button class="btn ghost" data-act="cancelOnboard">Volver</button>' : '<span></span>'}<button class="btn ghost" data-act="logout">Cerrar sesión</button></div>
+    <p class="err" style="font-size:15px">${esc(S.noauth)}</p>
+    <p>Quien gestiona la hoja de tu familia tiene que escribir tu correo de Gmail en la pestaña <b>Config</b> y darte acceso. Luego vuelve a abrir esta página.</p>
+    <button class="btn pri" data-act="retry">Probar otra vez</button>
   </div>`;
 }
 function syncDot() {
-  const n = pendingFor(S.famId).length;
+  const n = S.pending.length;
   if (S.offline) return '<span class="sync off" title="Sin conexión"></span>';
   if (n || S.inflight) return '<span class="sync wait" title="Guardando"></span>';
   return '<span class="sync" title="Guardado"></span>';
@@ -309,7 +240,7 @@ function brickCatalog(p) {
 }
 function vCatalog() {
   const f = F();
-  let h = `<div class="top"><button class="fam-btn" data-act="famSheet"><span class="fam-name">${esc(f.nombre)}</span><span class="caret">▼</span>${DEMO ? '<span class="demo-tag">PRUEBA</span>' : ''}</button><span class="count">${syncDot()}${listCount()} en la lista</span></div><div class="frames">`;
+  let h = `<div class="top"><span class="fam-btn"><span class="fam-name">${esc(f.nombre)}</span>${DEMO ? '<span class="demo-tag">PRUEBA</span>' : ''}</span><span class="count">${syncDot()}${listCount()} en la lista</span></div><div class="frames">`;
   act(f.categorias.map(c => Object.assign({ activo: true }, c))).forEach(c => {
     const ps = act(f.productos).filter(p => p.categoriaId === c.id);
     h += `<div class="frame" style="--c:${c.color}"><span class="frame-t">${esc(c.nombre)}</span><div class="bricks">${ps.map(brickCatalog).join('')}<button class="b dash" data-act="newProduct" data-cat="${c.id}">Nuevo</button></div></div>`;
@@ -348,15 +279,13 @@ function vSettings() {
     const used = supers().map(s => s.logo);
     brandBricks = Object.keys(BRANDS).filter(k => !used.includes(k)).map(k => `<button class="b" data-act="addBrand" data-v="${k}"><img class="lg" src="logos/${k}.png" alt="">${BRANDS[k].n}</button>`).join('');
   }
-  return `<div class="top"><span class="fam-name">Ajustes</span><span class="count">${syncDot()}${DEMO ? 'modo prueba' : esc(S.user && S.user.email)}</span></div><div class="frames">
+  return `<div class="top"><span class="fam-name">Ajustes</span><span class="count">${syncDot()}${DEMO ? 'modo prueba' : esc(S.user && S.user.nombre)}</span></div><div class="frames">
     <div class="frame" style="--c:#7A5BD6"><span class="frame-t">Personas</span><div class="bricks">${ps}${adder('personas', 'Nombre')}</div></div>
     <div class="frame" style="--c:#1E8E57"><span class="frame-t">Supermercados</span><div class="bricks">${ss}${brandBricks}${adder('supers', 'Otro súper')}</div></div>
     <div class="frame" style="--c:var(--accent)"><span class="frame-t">Familia</span><div class="bricks">
-      <button class="b" data-act="famSheet">${esc(f.nombre)} <span class="caret">▼</span></button>
-      <button class="b" data-act="copyCode">Código para invitar: <b style="color:var(--accent)">${esc(f.codigo)}</b></button>
-      ${f.hojaUrl ? `<a class="b" href="${esc(f.hojaUrl)}" target="_blank" rel="noopener">Abrir la hoja de cálculo</a>` : ''}
-      <button class="b" data-act="logout">Cerrar sesión</button></div></div>
-  </div><p class="hint">Toca una persona o un súper para cambiar su color o quitarlo. Para invitar, pasa el código: entran con su Gmail y lo escriben.</p>`;
+      ${f.hojaUrl ? `<a class="b" href="${esc(f.hojaUrl)}" target="_blank" rel="noopener">Abrir la hoja de cálculo</a>` : '<span class="b">En modo prueba no hay hoja</span>'}
+      </div></div>
+  </div><p class="hint">Toca una persona o un súper para cambiar su color o quitarlo. Para que alguien más entre, añade su Gmail en la pestaña Config de la hoja.</p>`;
 }
 function vNav() {
   const n = listCount();
@@ -387,11 +316,7 @@ function vOverlay() {
       </div>`;
     }
   }
-  if (S.sheet === 'fam') {
-    h += `<div class="scrim" data-act="closeSheet"><div class="sheet" data-stop="1"><h3>Familias</h3>
-      ${S.families.map(x => `<button class="fam-opt ${x.id === S.famId ? 'on' : ''}" data-act="pickFam" data-v="${x.id}">${esc(x.nombre)}<span class="count">${esc(x.codigo || '')}</span></button>`).join('')}
-      <button class="fam-opt" data-act="onboard">+ Crear otra familia o unirme con código</button></div></div>`;
-  } else if (S.sheet && S.sheet.type === 'newProduct') {
+  if (false) {  } else if (S.sheet && S.sheet.type === 'newProduct') {
     const c = f.categorias.find(x => x.id === S.sheet.cat) || {};
     h += `<div class="scrim" data-act="closeSheet"><div class="sheet" data-stop="1"><h3>Nuevo en ${esc(c.nombre)}</h3>
       <div class="row"><input class="in" id="newName" placeholder="Por ejemplo, Champú" enterkeyhint="done"><button class="btn pri" data-act="saveProduct">Añadir</button></div></div></div>`;
@@ -406,9 +331,8 @@ function vOverlay() {
 function render(keep) {
   const app = document.getElementById('app');
   const sc = app.querySelector('.screen'); const y = sc ? sc.scrollTop : 0;
-  if (!S.session) { app.innerHTML = vLogin(); mountGoogleButton(); }
-  else if (S.mode === 'onboard' || !S.famId) { app.innerHTML = vOnboard(); }
-  else if (!S.fam) { app.innerHTML = `<div class="hero"><p>${S.offline ? 'Sin conexión. Lo intento de nuevo en unos segundos.' : 'Cargando la lista…'}</p>${S.err ? `<div class="err">${esc(S.err)}</div>` : ''}</div>`; }
+  if (S.noauth) { app.innerHTML = vNoAuth(); }
+  else if (!S.fam) { app.innerHTML = `<div class="hero"><h1>Cesta</h1><p>${S.offline ? 'Sin conexión. Lo intento de nuevo en unos segundos.' : 'Cargando la lista…'}</p>${S.err ? `<div class="err">${esc(S.err)}</div>` : ''}</div>`; }
   else {
     const body = S.view === 'list' ? vList() : S.view === 'settings' ? vSettings() : vCatalog();
     app.innerHTML = `<div class="screen">${body}</div>${vNav()}`;
@@ -417,7 +341,7 @@ function render(keep) {
   renderOverlay();
 }
 function renderOverlay() {
-  document.getElementById('overlay').innerHTML = (S.session && S.fam) || S.toast ? vOverlay() : '';
+  document.getElementById('overlay').innerHTML = S.fam || S.toast ? vOverlay() : '';
   placePop();
   if (S.adding) focusSoon('new-' + S.adding);
   if (S.sheet && S.sheet.type === 'newProduct') focusSoon('newName');
@@ -497,31 +421,8 @@ document.addEventListener('click', e => {
   if (el.classList.contains('scrim') && e.target.closest('[data-stop]')) return;
   const a = el.dataset.act, v = el.dataset.v;
   switch (a) {
-    case 'demoLogin': { const n = (document.getElementById('demoName').value || '').trim(); loginWith({ nombre: n || 'Tú' }); break; }
-    case 'createFam': {
-      const nombre = document.getElementById('fNombre').value.trim(), persona = document.getElementById('fPersona').value.trim();
-      if (!nombre) { document.getElementById('fNombre').focus(); return; }
-      el.disabled = true; el.textContent = 'Creando… (unos segundos)';
-      api('createFamily', { nombre, persona: persona || (S.user && S.user.nombre) || 'Yo' }).then(r => {
-        S.families.push(r.family); LS.set('families', S.families); setFam(r.family.id); S.mode = null; S.err = ''; S.view = 'catalog'; render(); refresh();
-      }).catch(err => { S.err = err.code ? err.message : 'Sin conexión.'; render(); });
-      break;
-    }
-    case 'joinFam': {
-      const codigo = document.getElementById('fCodigo').value.trim(); if (!codigo) return;
-      el.disabled = true;
-      api('joinFamily', { codigo }).then(r => {
-        if (!S.families.some(x => x.id === r.family.id)) S.families.push(r.family);
-        LS.set('families', S.families); setFam(r.family.id); S.mode = null; S.err = ''; S.view = 'catalog'; render(); refresh();
-      }).catch(err => { S.err = err.code ? err.message : 'Sin conexión.'; render(); });
-      break;
-    }
-    case 'cancelOnboard': S.mode = null; S.err = ''; render(); break;
-    case 'onboard': S.sheet = null; S.mode = 'onboard'; render(); break;
-    case 'logout': logout(false); break;
+    case 'retry': S.noauth = ''; S.err = ''; render(); refresh(); break;
     case 'view': S.view = v; S.pop = null; S.adding = null; render(); break;
-    case 'famSheet': S.sheet = 'fam'; S.pop = null; renderOverlay(); break;
-    case 'pickFam': S.sheet = null; setFam(v); S.view = 'catalog'; render(); refresh(); break;
     case 'closeSheet': if (el.classList.contains('scrim') && e.target !== el) return; S.sheet = null; renderOverlay(); break;
     case 'closePop': S.pop = null; render(true); break;
     case 'setP': { const r = inList(S.pop.id); itemOp({ personaId: r && r.personaId === v ? '' : v }); break; }
@@ -571,26 +472,18 @@ document.addEventListener('click', e => {
       doOp({ op: 'upsertSuper', id: old ? old.id : uid('s'), nombre: BRANDS[v].n, color: BRANDS[v].c, logo: v });
       S.adding = null; render(true); break;
     }
-    case 'copyCode': {
-      const t = f.codigo;
-      const msg = `Únete a nuestra lista de la compra en Cesta: ${location.href.split('#')[0]} con el código ${t}`;
-      if (navigator.share) { navigator.share({ text: msg }).catch(() => {}); }
-      else if (navigator.clipboard) navigator.clipboard.writeText(msg).then(() => toast('Invitación copiada'), () => toast('Código: ' + t));
-      else toast('Código: ' + t);
-      break;
-    }
     case 'undo': if (S.toast && S.toast.undo) { const u = S.toast.undo; S.toast = null; u(); } break;
   }
 });
 document.addEventListener('keydown', e => {
   if (e.key !== 'Enter' || !e.target.id) return;
   const id = e.target.id;
-  const map = { newName: 'saveProduct', renameIn: 'saveRename', demoName: 'demoLogin', fCodigo: 'joinFam', fPersona: 'createFam' };
+  const map = { newName: 'saveProduct', renameIn: 'saveRename' };
   const act = map[id] || (id.startsWith('new-') ? 'addOk' : null);
   if (act) { const b = document.querySelector(`[data-act="${act}"]`); b && b.click(); }
 });
 window.addEventListener('resize', placePop);
 
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+if (DEMO && 'serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
 boot();
 })();
