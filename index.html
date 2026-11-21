@@ -767,13 +767,16 @@ function beep(kind) {
   } catch (e) {}
 }
 function say(text, interrupt) {
-  if (!S.voice || !('speechSynthesis' in window)) return;
+  if (!S.voice) return;
+  if (!('speechSynthesis' in window)) { if (!say.warned) { say.warned = true; toast('Este navegador no tiene voz. Usa Chrome.', 6000); } return; }
   try {
     const go = () => {
       const u = new SpeechSynthesisUtterance(text);
       const vs = voices(); const v = vs.find(x => x.voiceURI === S.voiceURI) || vs.find(x => /es[-_]ES/i.test(x.lang)) || vs[0];
       if (v) u.voice = v; u.lang = v ? v.lang : 'es-ES'; u.rate = S.rate; u.volume = 1;
+      let started = false; u.onstart = () => { started = true; say.ok = true; };
       speechSynthesis.speak(u);
+      if (!say.ok && !say.warned) setTimeout(() => { if (!started && !say.ok && !say.warned) { say.warned = true; toast(voices().length ? 'La voz no arranca. Sube el volumen o prueba en Chrome.' : 'Este navegador no tiene voz en español (Brave la bloquea). Usa Chrome o baja los escudos de Brave para esta web.', 7000); } }, 3000);
     };
     if (interrupt && (speechSynthesis.speaking || speechSynthesis.pending)) { speechSynthesis.cancel(); setTimeout(go, 80); } else go();
   } catch (e) {}
