@@ -56,6 +56,13 @@ button:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(-
 .b.done{background:var(--brick);border-color:var(--line);color:var(--muted);text-decoration:line-through}
 .b.done .lg{opacity:.4}
 .b.sel{box-shadow:0 0 0 2px var(--bg),0 0 0 4px var(--s,var(--accent))}
+.b.kill{touch-action:none;cursor:grab;padding-right:calc(3px*var(--k))}
+.b.kill .grip{opacity:.5;font-size:calc(12px*var(--k))}
+.b.kill .x{border:0;background:none;padding:0 calc(5px*var(--k));font:inherit;color:var(--danger);font-weight:800}
+.b.dragging{opacity:.3}
+.ghost{position:fixed;z-index:50;pointer-events:none;box-shadow:0 8px 20px rgba(0,0,0,.3);transform:scale(1.08);background:var(--surface)}
+.frame.drop{background:color-mix(in srgb,var(--c) 14%,transparent)}
+.frames > .b.dash{align-self:flex-start}
 .b.kill{border:1.5px dashed var(--danger);color:var(--danger)}
 .b.kill .pl{color:var(--danger)}
 .b.dash{border-style:dashed;color:var(--muted)}
@@ -197,6 +204,8 @@ function applyOp(st, op, email) {
     case 'buy': { const r = row(op.productoId); if (r) Object.assign(r, { comprado: op.value ? now : '', actualizado: now, por: email }); break; }
     case 'addProduct': st.productos.push({ id: op.id, nombre: op.nombre, categoriaId: op.categoriaId, superId: op.superId, orden: st.productos.length + 1, activo: true }); break;
     case 'setProductSuper': { const p = st.productos.find(x => x.id === op.productoId); if (p) p.superId = op.superId; break; }
+    case 'moveProduct': { const p = st.productos.find(x => x.id === op.productoId); if (p) p.categoriaId = op.categoriaId; break; }
+    case 'addCategory': if (!st.categorias.some(c => c.id === op.id)) st.categorias.push({ id: op.id, nombre: op.nombre, color: op.color, orden: st.categorias.length + 1 }); break;
     case 'restoreProduct': { const p = st.productos.find(x => x.id === op.productoId); if (p) p.activo = true; break; }
     case 'removeProduct': { const p = st.productos.find(x => x.id === op.productoId); if (p) p.activo = false; st.lista = st.lista.filter(r => r.productoId !== op.productoId); break; }
     case 'upsertPersona': {
@@ -365,18 +374,19 @@ function syncDot() {
 function brickCatalog(p) {
   const r = inList(p.id);
   const sel = S.pop && S.pop.type === 'item' && S.pop.id === p.id ? ' sel' : '';
-  if (S.editCat) return `<button class="b kill" data-pid="${p.id}">${esc(p.nombre)}<span class="pl">✕</span></button>`;
+  if (S.editCat) return `<span class="b kill" data-pid="${p.id}"><span class="grip">⠿</span>${esc(p.nombre)}<button class="pl x" data-kill="${p.id}" aria-label="Quitar ${esc(p.nombre)}">✕</button></span>`;
   if (!r) return `<button class="b${sel}" data-pid="${p.id}">${esc(p.nombre)}<span class="pl">+</span></button>`;
   const s = superById(r.superId) || { color: '#666' }, pe = personaById(r.personaId);
-  return `<button class="b on${sel}" style="--s:${s.color};--t:${ink(s.color)}${pe ? ';--p:' + pe.color : ''}" data-pid="${p.id}">${logoImg(s)}${pe ? '<span class="pd"></span>' : ''}${esc(p.nombre)}${Number(r.cantidad) > 1 ? `<span class="q">${r.cantidad}</span>` : ''}<span class="pl">+</span></button>`;
+  return `<button class="b on${sel}" style="--s:${s.color};--t:${ink(s.color)}${pe ? ';--p:' + pe.color : ''}" data-pid="${p.id}">${pe ? '<span class="pd"></span>' : ''}${esc(p.nombre)}${Number(r.cantidad) > 1 ? `<span class="q">${r.cantidad}</span>` : ''}<span class="pl">+</span></button>`;
 }
 function vCatalog() {
   const f = F();
-  let h = `<div class="top"><span class="fam-btn"><span class="fam-name">${esc(f.nombre)}</span>${DEMO ? '<span class="demo-tag">PRUEBA</span>' : ''}</span>${S.editCat ? '<button class="btn pri" data-act="editDone">Terminar</button>' : `<span class="count">${syncDot()}${listCount()} en la lista</span>`}</div>${S.editCat ? '<p class="hint" style="margin:0 0 12px">Toca los productos que no uséis para quitarlos del catálogo.</p>' : ''}<div class="frames">`;
+  let h = `<div class="top"><span class="fam-btn"><span class="fam-name">${esc(f.nombre)}</span>${DEMO ? '<span class="demo-tag">PRUEBA</span>' : ''}</span>${S.editCat ? '<button class="btn pri" data-act="editDone">Terminar</button>' : `<span class="count">${syncDot()}${listCount()} en la lista</span>`}</div>${S.editCat ? '<p class="hint" style="margin:0 0 12px">Arrastra un producto a otra categoría para moverlo. Toca ✕ para quitarlo del catálogo.</p>' : ''}<div class="frames">`;
   act(f.categorias.map(c => Object.assign({ activo: true }, c))).forEach(c => {
     const ps = act(f.productos).filter(p => p.categoriaId === c.id);
-    h += `<div class="frame" style="--c:${c.color}"><span class="frame-t">${esc(c.nombre)}</span><div class="bricks">${ps.map(brickCatalog).join('')}${S.editCat ? '' : `<button class="b dash" data-act="newProduct" data-cat="${c.id}">Nuevo</button>`}</div></div>`;
+    h += `<div class="frame" data-cat="${c.id}" style="--c:${c.color}"><span class="frame-t">${esc(c.nombre)}</span><div class="bricks">${ps.map(brickCatalog).join('')}${S.editCat ? '' : `<button class="b dash" data-act="newProduct" data-cat="${c.id}">Nuevo</button>`}</div></div>`;
   });
+  if (S.editCat) h += `<button class="b dash" data-act="newCategory" style="align-self:flex-start;font-size:calc(15px*var(--k))">+ Nueva categoría</button>`;
   return h + '</div><div style="height:12px"></div>';
 }
 function vList() {
@@ -414,7 +424,7 @@ function vSettings() {
   return `<div class="top"><span class="fam-name">Ajustes</span><span class="count">${syncDot()}${DEMO ? 'modo prueba' : esc(S.user && S.user.nombre)}</span></div><div class="frames">
     <div class="frame" style="--c:#7A5BD6"><span class="frame-t">Personas</span><div class="bricks">${ps}${adder('personas', 'Nombre')}</div></div>
     <div class="frame" style="--c:#1E8E57"><span class="frame-t">Supermercados</span><div class="bricks">${ss}${brandBricks}${adder('supers', 'Otro súper')}</div></div>
-    <div class="frame" style="--c:#C94848"><span class="frame-t">Catálogo</span><div class="bricks"><button class="b" data-act="editCat">✕ Quitar productos del catálogo</button></div></div>
+    <div class="frame" style="--c:#C94848"><span class="frame-t">Catálogo</span><div class="bricks"><button class="b" data-act="editCat">Organizar: mover, quitar y añadir categorías</button></div></div>
     <div class="frame" style="--c:#3D6FC2"><span class="frame-t">Aspecto</span><div class="bricks">${[['auto', 'Automático'], ['light', 'Claro'], ['dark', 'Oscuro']].map(([t, l]) => `<button class="b${LS.get('theme', 'auto') === t ? ' on' : ''}" style="--s:#3D6FC2" data-act="theme" data-v="${t}">${l}</button>`).join('')}</div></div>
     <div class="frame" style="--c:#C48A1C"><span class="frame-t">Tamaño</span><div class="bricks">${SIZES.map((k, i) => `<button class="b${Number(LS.get('k', 1.25)) === k ? ' on' : ''}" style="--s:#C48A1C;font-size:${Math.round(13 * k)}px;padding:${Math.round(6 * k)}px ${Math.round(10 * k)}px" data-act="size" data-v="${k}">${['A', 'A', 'A', 'A'][i]}</button>`).join('')}</div></div>
     <div class="frame" style="--c:var(--accent)"><span class="frame-t">Familia</span><div class="bricks">
@@ -455,6 +465,9 @@ function vOverlay() {
     const c = f.categorias.find(x => x.id === S.sheet.cat) || {};
     h += `<div class="scrim" data-act="closeSheet"><div class="sheet" data-stop="1"><h3>Nuevo en ${esc(c.nombre)}</h3>
       <div class="row"><input class="in" id="newName" placeholder="Por ejemplo, Champú" enterkeyhint="done"><button class="btn pri" data-act="saveProduct">Añadir</button></div></div></div>`;
+  } else if (S.sheet && S.sheet.type === 'newCategory') {
+    h += `<div class="scrim" data-act="closeSheet"><div class="sheet" data-stop="1"><h3>Nueva categoría</h3>
+      <div class="row"><input class="in" id="newCatName" placeholder="Por ejemplo, Congelados" enterkeyhint="done"><button class="btn pri" data-act="saveCategory">Añadir</button></div></div></div>`;
   } else if (S.sheet && S.sheet.type === 'rename') {
     h += `<div class="scrim" data-act="closeSheet"><div class="sheet" data-stop="1"><h3>Cambiar nombre</h3>
       <div class="row"><input class="in" id="renameIn" value="${esc(S.sheet.nombre)}" enterkeyhint="done"><button class="btn pri" data-act="saveRename">Guardar</button></div></div></div>`;
@@ -481,6 +494,7 @@ function renderOverlay() {
   if (S.adding) focusSoon('new-' + S.adding);
   if (S.sheet && S.sheet.type === 'newProduct') focusSoon('newName');
   if (S.sheet && S.sheet.type === 'rename') focusSoon('renameIn');
+  if (S.sheet && S.sheet.type === 'newCategory') focusSoon('newCatName');
 }
 function focusSoon(id) { setTimeout(() => { const i = document.getElementById(id); if (i && document.activeElement !== i) i.focus(); }, 40); }
 function placePop() {
@@ -531,11 +545,18 @@ document.addEventListener('contextmenu', e => { if (e.target.closest('.b')) e.pr
 
 document.addEventListener('click', e => {
   const f = F();
+  const kb = e.target.closest('[data-kill]');
+  if (kb) {
+    const p = f.productos.find(x => x.id === kb.dataset.kill); if (!p) return;
+    doOp({ op: 'removeProduct', productoId: p.id }); toast(`${p.nombre} quitado del catálogo`, () => doOp({ op: 'restoreProduct', productoId: p.id }));
+    return;
+  }
+  if (dragJustEnded) { dragJustEnded = false; return; }
   const pb = e.target.closest('.b[data-pid]');
   if (pb) {
     if (lpFired) { lpFired = false; return; }
     const p = f.productos.find(x => x.id === pb.dataset.pid); if (!p) return;
-    if (S.editCat) { doOp({ op: 'removeProduct', productoId: p.id }); toast(`${p.nombre} quitado del catálogo`, () => doOp({ op: 'restoreProduct', productoId: p.id })); return; }
+    if (S.editCat) return;
     if (tapT && tapId === p.id) { clearTimeout(tapT); tapT = null; openItemPop(p); return; }
     clearTimeout(tapT); tapId = p.id;
     tapT = setTimeout(() => { tapT = null; addOne(p); }, 260);
@@ -558,6 +579,14 @@ document.addEventListener('click', e => {
   const a = el.dataset.act, v = el.dataset.v;
   switch (a) {
     case 'theme': LS.set('theme', v); applyTheme(v); render(true); break;
+    case 'newCategory': S.sheet = { type: 'newCategory' }; renderOverlay(); break;
+    case 'saveCategory': {
+      const nm = document.getElementById('newCatName').value.trim(); if (!nm) return;
+      if (f.categorias.some(c => c.nombre.toLowerCase() === nm.toLowerCase())) { toast('Ya hay una categoría con ese nombre'); return; }
+      const used = f.categorias.map(c => c.color), CC = ['#4E9A2A', '#C94848', '#C48A1C', '#3D6FC2', '#1A8C93', '#7A5BD6', '#D9467A', '#8A6B4E', '#E08A1E', '#0E9AA7'];
+      doOp({ op: 'addCategory', id: uid('c'), nombre: nm[0].toUpperCase() + nm.slice(1), color: CC.find(c => !used.includes(c)) || CC[0] });
+      S.sheet = null; renderOverlay(); toast(`Categoría ${nm} añadida. Arrastra productos a ella.`); break;
+    }
     case 'editCat': S.editCat = true; S.view = 'catalog'; S.pop = null; render(); break;
     case 'editDone': S.editCat = false; render(true); break;
     case 'size': LS.set('k', Number(v)); applySize(Number(v)); render(true); break;
@@ -618,11 +647,55 @@ document.addEventListener('click', e => {
 document.addEventListener('keydown', e => {
   if (e.key !== 'Enter' || !e.target.id) return;
   const id = e.target.id;
-  const map = { newName: 'saveProduct', renameIn: 'saveRename' };
+  const map = { newName: 'saveProduct', renameIn: 'saveRename', newCatName: 'saveCategory' };
   const act = map[id] || (id.startsWith('new-') ? 'addOk' : null);
   if (act) { const b = document.querySelector(`[data-act="${act}"]`); b && b.click(); }
 });
 window.addEventListener('resize', placePop);
+
+/* ---------- arrastrar productos entre categorías (modo Organizar) ---------- */
+let drag = null, dragJustEnded = false, scrollT = null;
+document.addEventListener('pointerdown', e => {
+  if (!S.editCat || e.target.closest('[data-kill]')) return;
+  const b = e.target.closest('.b.kill[data-pid]'); if (!b) return;
+  drag = { pid: b.dataset.pid, el: b, x0: e.clientX, y0: e.clientY, started: false, id: e.pointerId };
+});
+document.addEventListener('pointermove', e => {
+  if (!drag || e.pointerId !== drag.id) return;
+  if (!drag.started) {
+    if (Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) < 8) return;
+    drag.started = true;
+    const r = drag.el.getBoundingClientRect();
+    drag.dx = drag.x0 - r.left; drag.dy = drag.y0 - r.top;
+    drag.ghost = drag.el.cloneNode(true); drag.ghost.classList.add('ghost');
+    document.body.appendChild(drag.ghost); drag.el.classList.add('dragging');
+  }
+  e.preventDefault();
+  drag.ghost.style.left = (e.clientX - drag.dx) + 'px'; drag.ghost.style.top = (e.clientY - drag.dy) + 'px';
+  document.querySelectorAll('.frame.drop').forEach(x => x.classList.remove('drop'));
+  const fr = document.elementFromPoint(e.clientX, e.clientY); const frame = fr && fr.closest('.frame[data-cat]');
+  if (frame) frame.classList.add('drop');
+  const sc = document.querySelector('.screen'); clearInterval(scrollT);
+  if (sc) { const H = window.innerHeight; const v = e.clientY < 90 ? -12 : e.clientY > H - 110 ? 12 : 0; if (v) scrollT = setInterval(() => { sc.scrollTop += v; }, 16); }
+}, { passive: false });
+function endDrag(e) {
+  if (!drag || (e && e.pointerId !== drag.id)) return;
+  clearInterval(scrollT);
+  const d = drag; drag = null;
+  if (!d.started) return;
+  dragJustEnded = true; setTimeout(() => { dragJustEnded = false; }, 300);
+  d.ghost.remove(); d.el.classList.remove('dragging');
+  document.querySelectorAll('.frame.drop').forEach(x => x.classList.remove('drop'));
+  const fr = e && document.elementFromPoint(e.clientX, e.clientY); const frame = fr && fr.closest('.frame[data-cat]');
+  const p = F().productos.find(x => x.id === d.pid);
+  if (frame && p && frame.dataset.cat !== p.categoriaId) {
+    const c = F().categorias.find(x => x.id === frame.dataset.cat);
+    doOp({ op: 'moveProduct', productoId: p.id, categoriaId: frame.dataset.cat });
+    toast(`${p.nombre} → ${c ? c.nombre : ''}`);
+  }
+}
+document.addEventListener('pointerup', endDrag);
+document.addEventListener('pointercancel', endDrag);
 
 if (DEMO && 'serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
 boot();

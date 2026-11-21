@@ -50,6 +50,13 @@ button:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(-
 .b.done{background:var(--brick);border-color:var(--line);color:var(--muted);text-decoration:line-through}
 .b.done .lg{opacity:.4}
 .b.sel{box-shadow:0 0 0 2px var(--bg),0 0 0 4px var(--s,var(--accent))}
+.b.kill{touch-action:none;cursor:grab;padding-right:calc(3px*var(--k))}
+.b.kill .grip{opacity:.5;font-size:calc(12px*var(--k))}
+.b.kill .x{border:0;background:none;padding:0 calc(5px*var(--k));font:inherit;color:var(--danger);font-weight:800}
+.b.dragging{opacity:.3}
+.ghost{position:fixed;z-index:50;pointer-events:none;box-shadow:0 8px 20px rgba(0,0,0,.3);transform:scale(1.08);background:var(--surface)}
+.frame.drop{background:color-mix(in srgb,var(--c) 14%,transparent)}
+.frames > .b.dash{align-self:flex-start}
 .b.kill{border:1.5px dashed var(--danger);color:var(--danger)}
 .b.kill .pl{color:var(--danger)}
 .b.dash{border-style:dashed;color:var(--muted)}

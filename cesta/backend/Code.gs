@@ -269,6 +269,10 @@ function applyOps(user, ops) {
           if (!st.productos.some(p => p.id === op.id)) st.productos.push({ id: op.id, nombre: op.nombre, categoriaId: op.categoriaId, superId: op.superId, orden: st.productos.length + 1, activo: true });
           dirty.Productos = true; break;
         case 'setProductSuper': { const p = st.productos.find(x => x.id === op.productoId); if (p) { p.superId = op.superId; dirty.Productos = true; } break; }
+        case 'moveProduct': { const p = st.productos.find(x => x.id === op.productoId); if (p) { p.categoriaId = op.categoriaId; dirty.Productos = true; } break; }
+        case 'addCategory':
+          if (!st.categorias.some(c => c.id === op.id)) st.categorias.push({ id: op.id, nombre: op.nombre, color: op.color, orden: st.categorias.length + 1 });
+          dirty.Categorias = true; break;
         case 'restoreProduct': { const p = st.productos.find(x => x.id === op.productoId); if (p) { p.activo = true; dirty.Productos = true; } break; }
         case 'removeProduct': { const p = st.productos.find(x => x.id === op.productoId); if (p) p.activo = false; st.lista = st.lista.filter(x => x.productoId !== op.productoId); dirty.Productos = dirty.Lista = true; break; }
         case 'upsertPersona': {
