@@ -111,6 +111,18 @@ details.src{background:var(--surface);border:1px solid var(--line);border-radius
 details.src summary{cursor:pointer;font-weight:600}
 details.src pre{white-space:pre-wrap;font-family:var(--f-body);font-size:.85rem;color:var(--muted);margin:8px 0 0}
 
+.amt{min-height:46px;border:1px solid var(--line);background:var(--surface-2);border-radius:10px;font-family:var(--f-display);font-size:1.35rem;font-weight:700;text-align:left;padding:4px 12px;width:100%}
+.iv .r2 select{width:100%;color:var(--ink);font-weight:600}
+.pk-prev{font-family:var(--f-display);font-size:3.2rem;font-weight:800;text-align:center;line-height:1}
+.wheels{position:relative;display:flex;justify-content:center;align-items:flex-start;gap:6px}
+.wheels::before{content:"";position:absolute;left:0;right:0;top:96px;height:48px;border-radius:12px;background:var(--surface);border:2px solid var(--accent);box-sizing:border-box;pointer-events:none}
+.wcol{display:flex;flex-direction:column;align-items:center;gap:4px;position:relative}
+.wheel{height:240px;width:110px;overflow-y:scroll;scroll-snap-type:y mandatory;padding-block:96px;box-sizing:border-box;scrollbar-width:none;-webkit-mask-image:linear-gradient(transparent,#000 35%,#000 65%,transparent);mask-image:linear-gradient(transparent,#000 35%,#000 65%,transparent);overscroll-behavior:contain;touch-action:pan-y}
+.wheel::-webkit-scrollbar{display:none}
+.wheel .wi{height:48px;line-height:48px;text-align:center;scroll-snap-align:center;font-family:var(--f-display);font-size:1.9rem;font-weight:700;cursor:pointer;font-variant-numeric:tabular-nums}
+#wd{width:180px}
+.wsep{position:relative;font-family:var(--f-display);font-size:2rem;font-weight:800;line-height:48px;margin-top:96px}
+.wlab{font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--muted)}
 .dock{position:fixed;left:0;right:0;bottom:0;z-index:20;background:var(--bg);border-top:1px solid var(--line);padding-top:10px;padding-bottom:calc(10px + env(safe-area-inset-bottom,0px));padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
 .dock .in{max-width:640px;margin:0 auto;display:flex;gap:8px}
 .dock .btn{flex:1}

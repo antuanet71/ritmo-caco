@@ -106,6 +106,7 @@ function renderHome() {
   <div class="stack">
     ${resumable ? `<div class="banner row"><div style="flex:1"><b>Entreno a medias</b><div>${esc(resumable.title)}</div></div><button class="btn primary" data-act="resume">Reanudar</button><button class="btn ghost" data-act="discard">Descartar</button></div>` : ''}
     <button class="cta" data-act="import"><span class="ic">${ICON.paste}</span><span><b>Pegar mensaje del entrenador</b><span>Copia el WhatsApp y lo convierto en intervalos</span></span></button>
+    <button class="btn big" data-act="manual">+ Crear entrenamiento a mano</button>
     <div class="row" style="margin-top:8px"><h2>Mis entrenamientos</h2><div class="spacer"></div><span class="muted num">${list.length}</span></div>
     <div class="legend">${legend()}</div>
     ${list.length ? '' : '<p class="muted">Todavía no hay entrenamientos. Pega el primero arriba.</p>'}
@@ -162,6 +163,7 @@ function summaryHTML(w, steps, tot) {
     <div><div class="lbl">Intervalos</div><div class="big">${steps.length}</div></div>
     ${w.declaredText ? `<div class="muted" style="padding-bottom:6px">El mensaje decía ${esc(w.declaredText)}</div>` : ''}`;
 }
+const RPE_OPTS = ['', '1', '2', '3', '4', '4-5', '5', '5-6', '6', '6-7', '7', '7-8', '8', '8-9', '9', '10'];
 function ivHTML(it, path) {
   const est = it.dist ? `≈ ${fmt(RC.itemSeconds(it, S))} a tu ritmo` : '';
   return `<div class="iv ${tclass(it)}" data-path="${path}">
@@ -169,8 +171,8 @@ function ivHTML(it, path) {
     <input type="text" data-f="label" value="${esc(it.label)}" aria-label="Descripción">
     <button class="del" data-act="del" aria-label="Quitar">×</button>
     <div class="r2">
-      <label class="field"><small>Duración o distancia</small><input type="text" data-f="amount" value="${esc(amountStr(it))}" inputmode="text" placeholder="1:30 · 500m"><span class="hint" data-est>${est}</span></label>
-      <label class="field"><small>Esfuerzo /10</small><input type="text" data-f="rpe" value="${esc(it.rpe || '')}" inputmode="text" placeholder="—"></label>
+      <div class="field"><small>${it.dist ? 'Distancia' : 'Duración'}</small><button type="button" class="amt num" data-act="pick">${esc(amountStr(it))}</button><span class="hint" data-est>${est}</span></div>
+      <label class="field"><small>Esfuerzo /10</small><select data-f="rpe" class="num">${RPE_OPTS.concat(it.rpe && !RPE_OPTS.includes(it.rpe) ? [it.rpe] : []).map(o => `<option value="${o}"${o === (it.rpe || '') ? ' selected' : ''}>${o ? o.replace('-', '–') + ' /10' : 'Sin indicar'}</option>`).join('')}</select></label>
     </div>
   </div>`;
 }
@@ -207,6 +209,8 @@ document.addEventListener('click', e => {
   const w = id && workouts.find(x => x.id === id);
   switch (act) {
     case 'home': renderHome(); scrollTo(0, 0); break;
+    case 'manual': draft = newManual(); draftIsNew = true; renderEditor(); scrollTo(0, 0); break;
+    case 'pick': openPicker(b.closest('[data-path]').dataset.path); break;
     case 'import': renderImport(); scrollTo(0, 0); setTimeout(() => $('#paste') && $('#paste').focus(), 50); break;
     case 'example': $('#paste').value = (workouts.find(x => x.source) || {}).source || EXAMPLE; break;
     case 'convert': {
@@ -261,6 +265,52 @@ function askConfirm(msg, okLabel, fn, cancelLabel = 'Cancelar') {
   c.hidden = false;
   $('#c-no').onclick = () => c.hidden = true;
   $('#c-ok').onclick = () => { c.hidden = true; fn(); };
+}
+
+function newManual() {
+  const iv = (type, label, dur, rpe = '') => ({ kind: 'int', type, label, dur, rpe });
+  return { id: uid(), title: 'Mi entrenamiento', date: Date.now(), declaredText: '', warnings: [], source: '', seed: false, sections: [
+    { kind: 'warmup', name: 'Calentamiento', declared: null, items: [iv('walk', 'Caminata a buen ritmo', 300, '3'), iv('mobility', 'Movilidad articular', 300)] },
+    { kind: 'main', name: 'Bloque principal', declared: null, items: [{ kind: 'group', reps: 6, items: [iv('run', 'Trote', 120, '6-7'), iv('walk', 'Caminata activa', 60, '4')] }] },
+    { kind: 'cooldown', name: 'Vuelta a la calma', declared: null, items: [iv('walk', 'Caminata muy suave', 300, '2')] }] };
+}
+const MINS = Array.from({ length: 91 }, (_, i) => i), SECS = [0, 15, 30, 45];
+const DISTS = [...Array.from({ length: 20 }, (_, i) => 50 + i * 50), ...Array.from({ length: 40 }, (_, i) => 1100 + i * 100), ...Array.from({ length: 32 }, (_, i) => 5500 + i * 500)];
+const ITEM_H = 48;
+function wheelHTML(id, values, label) {
+  return `<div class="wcol"><div class="wheel" id="${id}" tabindex="0" aria-label="${label}">${values.map((v, i) => `<div class="wi" data-i="${i}">${v}</div>`).join('')}</div><div class="wlab">${label}</div></div>`;
+}
+function wheelIdx(el) { return Math.max(0, Math.min(el.children.length - 1, Math.round(el.scrollTop / ITEM_H))); }
+function wheelSet(el, i, smooth) { el.scrollTo({ top: i * ITEM_H, behavior: smooth ? 'smooth' : 'auto' }); }
+function openPicker(path) {
+  const it = getByPath(path).item; let mode = it.dist ? 'dist' : 'time';
+  const sh = $('#sheet');
+  const draw = () => {
+    sh.innerHTML = `<div class="panel" role="dialog" aria-label="Elegir ${mode === 'time' ? 'duración' : 'distancia'}">
+      <div class="row"><h2>${esc(it.label || TYPE_NAME[it.type])}</h2><div class="spacer"></div><div class="seg"><button data-pm="time" aria-pressed="${mode === 'time'}">Tiempo</button><button data-pm="dist" aria-pressed="${mode === 'dist'}">Distancia</button></div></div>
+      <div class="pk-prev num" id="pk-prev"></div>
+      <div class="wheels">${mode === 'time' ? wheelHTML('wm', MINS.map(String), 'min') + '<div class="wsep">:</div>' + wheelHTML('ws', SECS.map(pad), 's') : wheelHTML('wd', DISTS.map(d => d >= 1000 ? (d / 1000).toString().replace('.', ',') + ' km' : d + ' m'), 'distancia')}</div>
+      <div class="row"><button class="btn" id="pk-no" style="flex:1">Cancelar</button><button class="btn primary" id="pk-ok" style="flex:2">Aceptar</button></div>
+    </div>`;
+    sh.hidden = false;
+    const prev = $('#pk-prev');
+    const val = () => mode === 'time' ? { dur: MINS[wheelIdx($('#wm'))] * 60 + SECS[wheelIdx($('#ws'))] } : { dist: DISTS[wheelIdx($('#wd'))] };
+    const upd = () => { const v = val(); prev.textContent = v.dist ? amountStr(v) : fmt(v.dur); };
+    sh.querySelectorAll('.wheel').forEach(w => {
+      w.addEventListener('scroll', upd, { passive: true });
+      w.addEventListener('click', e => { const wi = e.target.closest('.wi'); if (wi) wheelSet(w, +wi.dataset.i, true); });
+      w.addEventListener('keydown', e => { if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); wheelSet(w, wheelIdx(w) + (e.key === 'ArrowDown' ? 1 : -1), true); } });
+    });
+    requestAnimationFrame(() => {
+      if (mode === 'time') { const d = it.dur || 60; let m = Math.floor(d / 60), si = Math.round((d % 60) / 15); if (si === 4) { m++; si = 0; } wheelSet($('#wm'), Math.min(90, m)); wheelSet($('#ws'), si); }
+      else { const d = it.dist || 400; let bi = 0; DISTS.forEach((x, i) => { if (Math.abs(x - d) < Math.abs(DISTS[bi] - d)) bi = i; }); wheelSet($('#wd'), bi); }
+      upd();
+    });
+    sh.querySelectorAll('[data-pm]').forEach(b => b.onclick = () => { mode = b.dataset.pm; draw(); });
+    $('#pk-no').onclick = () => { sh.hidden = true; };
+    $('#pk-ok').onclick = () => { const v = val(); if (v.dur === 0) { toast('Elige al menos 15 segundos'); return; } delete it.dur; delete it.dist; Object.assign(it, v); sh.hidden = true; renderEditor(); };
+  };
+  draw();
 }
 
 /* ---------- ajustes ---------- */
@@ -361,10 +411,14 @@ function say(text, interrupt) {
 }
 
 /* ---------- motor del entrenamiento ---------- */
-const R = { w: null, steps: [], idx: 0, t0: 0, paused: false, pe: 0, pre: false, beeped: -1, timer: null, wl: null, gpsOn: false, gd: 0, last: null, watch: null, done: false };
+const R = { w: null, steps: [], idx: 0, t0: 0, paused: false, pe: 0, pre: false, beeped: -1, timer: null, wl: null, gpsOn: false, fixAt: 0, gd: 0, last: null, watch: null, done: false };
 const runEl = $('#run');
 const elapsed = () => R.paused ? R.pe : (Date.now() - R.t0) / 1000;
-const useGps = st => !!(st && st.dist && S.gps && R.gpsOn);
+// GPS mode for a distance step; if no good fix in the last 12 s, the step advances by estimated time instead (never freezes)
+const gpsStep = st => !!(st && st.dist && S.gps && R.gpsOn);
+const gpsHealthy = () => Date.now() - R.fixAt < 12000;
+const useGps = st => gpsStep(st) && gpsHealthy();
+const distFrac = st => Math.min(1, gpsHealthy() ? R.gd / st.dist : Math.max(R.gd / st.dist, elapsed() / st.dur));
 function startRun(w, resume) {
   primeAudio();
   R.w = w; R.steps = buildSteps(w);
@@ -388,20 +442,21 @@ function startGps() {
   R.gpsOn = true;
   try {
     R.watch = navigator.geolocation.watchPosition(p => {
-      const c = p.coords; if (c.accuracy > 35) return;
+      const c = p.coords; if (c.accuracy > 50) return;
+      R.fixAt = Date.now();
       if (R.last && !R.paused) { const d = hav(R.last, c); if (d > 1.5 && d < 120) R.gd += d; }
       R.last = { latitude: c.latitude, longitude: c.longitude };
-    }, () => { if (R.gpsOn) { R.gpsOn = false; toast('GPS no disponible: uso el tiempo estimado', 4000); } }, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
+    }, err => { if (err && err.code === 1 && R.gpsOn) { R.gpsOn = false; toast('Sin permiso de ubicación: uso el tiempo estimado', 4000); } }, { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 });
   } catch (e) { R.gpsOn = false; }
 }
 function hav(a, b) { const r = Math.PI / 180, dLa = (b.latitude - a.latitude) * r, dLo = (b.longitude - a.longitude) * r; const x = Math.sin(dLa / 2) ** 2 + Math.cos(a.latitude * r) * Math.cos(b.latitude * r) * Math.sin(dLo / 2) ** 2; return 12742000 * Math.asin(Math.sqrt(x)); }
 function stopGps() { try { if (R.watch != null) navigator.geolocation.clearWatch(R.watch); } catch (e) {} R.watch = null; }
-function stepDone(st) { return useGps(st) ? R.gd >= st.dist : elapsed() >= st.dur; }
+function stepDone(st) { return gpsStep(st) ? distFrac(st) >= 1 : elapsed() >= st.dur; }
 function tick() {
   if (runEl.hidden || R.done || !R.steps.length) return;
   let st = R.steps[R.idx], moved = false;
   while (!R.paused && stepDone(st)) {
-    if (useGps(st)) { R.t0 = Date.now(); R.gd = 0; } else R.t0 += st.dur * 1000;
+    if (gpsStep(st)) { R.t0 = Date.now(); R.gd = 0; } else R.t0 += st.dur * 1000;
     R.idx++; moved = true; R.pre = false; R.beeped = -1;
     if (R.idx >= R.steps.length) { finish(); return; }
     st = R.steps[R.idx];
@@ -413,7 +468,7 @@ function tick() {
       const remM = st.dist - R.gd;
       if (!R.pre && remM <= 50 && st.dist > 150) { R.pre = true; prewarn(`En 50 metros`); }
     } else {
-      const rem = st.dur - elapsed();
+      const rem = gpsStep(st) ? st.dur * (1 - distFrac(st)) : st.dur - elapsed();
       if (!R.pre && rem <= S.prewarn && st.dur >= S.prewarn + 8) { R.pre = true; prewarn(`En ${S.prewarn} segundos`); }
       if (rem <= 3.05 && rem > 0) { const k = Math.ceil(rem); if (k !== R.beeped) { R.beeped = k; beep('tick'); } }
     }
@@ -486,9 +541,9 @@ function jump(d) {
 function render() {
   if (R.done) return;
   const st = R.steps[R.idx], nx = R.steps[R.idx + 1], e = elapsed();
-  const gps = useGps(st);
-  const rem = gps ? Math.max(0, st.dist - R.gd) : Math.max(0, st.dur - e);
-  const frac = gps ? Math.min(1, R.gd / st.dist) : Math.min(1, e / st.dur);
+  const gps = useGps(st), gstep = gpsStep(st);
+  const frac = gstep ? distFrac(st) : Math.min(1, e / st.dur);
+  const rem = gps ? Math.max(0, st.dist - R.gd) : Math.max(0, st.dur * (1 - frac));
   runEl.style.setProperty('--c', `var(--${tclass(st).slice(2).replace('mobility', 'mob')})`);
   runEl.classList.toggle('paused', R.paused);
   $('#r-sec').textContent = st.sectionName;
@@ -496,7 +551,7 @@ function render() {
   $('#r-kind').textContent = TYPE_NAME[st.type];
   $('#r-label').textContent = st.label && st.label.toLowerCase() !== TYPE_NAME[st.type].toLowerCase() ? st.label : '';
   $('#r-clock').textContent = gps ? `${Math.round(rem)} m` : fmt(Math.ceil(rem));
-  $('#r-gps').hidden = !st.dist; $('#r-gps').textContent = st.dist ? (gps ? `${Math.round(R.gd)} de ${st.dist} m · ${fmt(e)}` : `${st.dist} m estimados a tu ritmo`) : '';
+  $('#r-gps').hidden = !st.dist; $('#r-gps').textContent = st.dist ? (gps ? `GPS · ${Math.round(R.gd)} de ${st.dist} m · ${fmt(e)}` : gstep ? `Buscando GPS… ${st.dist} m por tiempo estimado` : `${st.dist} m estimados a tu ritmo`) : '';
   const n = rpeMax(st.rpe);
   $('#r-rpe').hidden = !st.rpe;
   if (st.rpe) { $('#r-rpe-t').textContent = `Esfuerzo ${st.rpe.replace('-', '–')}/10`; $('#r-dots').innerHTML = Array.from({ length: 10 }, (_, i) => `<i class="${i < n ? 'on' : ''}"></i>`).join(''); }
@@ -505,7 +560,7 @@ function render() {
   if (nx) { $('#r-nsw').style.setProperty('--nc', `var(--${tclass(nx).slice(2).replace('mobility', 'mob')})`); $('#r-nv').textContent = `${nx.label || TYPE_NAME[nx.type]} · ${nx.dist ? amountStr(nx) : fmt(nx.dur)}${nx.rpe ? ` · ${nx.rpe.replace('-', '–')}/10` : ''}`; }
   else { $('#r-nsw').style.setProperty('--nc', 'var(--walk)'); $('#r-nv').textContent = 'Fin del entrenamiento'; }
   const totalS = R.steps.reduce((a, s) => a + s.dur, 0);
-  const doneS = R.steps.slice(0, R.idx).reduce((a, s) => a + s.dur, 0) + Math.min(st.dur, gps ? frac * st.dur : e);
+  const doneS = R.steps.slice(0, R.idx).reduce((a, s) => a + s.dur, 0) + Math.min(st.dur, gstep ? frac * st.dur : e);
   $('#r-pos').style.left = (doneS / totalS * 100).toFixed(2) + '%';
   [...$('#r-tl').children].forEach((el, i) => el.classList.toggle('done', i < R.idx));
   const left = R.steps.length - R.idx - 1;
