@@ -118,6 +118,11 @@ const Demo = {
   }
 };
 
+/* ---------- tamaño de letra (se guarda en este móvil) ---------- */
+const SIZES = [1, 1.25, 1.5, 1.8];
+function applySize(k) { document.documentElement.style.setProperty('--k', k); }
+applySize(LS.get('k', 1.25));
+
 /* ---------- estado ---------- */
 const FAM = 'fam';
 const S = {
@@ -282,6 +287,7 @@ function vSettings() {
   return `<div class="top"><span class="fam-name">Ajustes</span><span class="count">${syncDot()}${DEMO ? 'modo prueba' : esc(S.user && S.user.nombre)}</span></div><div class="frames">
     <div class="frame" style="--c:#7A5BD6"><span class="frame-t">Personas</span><div class="bricks">${ps}${adder('personas', 'Nombre')}</div></div>
     <div class="frame" style="--c:#1E8E57"><span class="frame-t">Supermercados</span><div class="bricks">${ss}${brandBricks}${adder('supers', 'Otro súper')}</div></div>
+    <div class="frame" style="--c:#C48A1C"><span class="frame-t">Tamaño</span><div class="bricks">${SIZES.map((k, i) => `<button class="b${Number(LS.get('k', 1.25)) === k ? ' on' : ''}" style="--s:#C48A1C;font-size:${Math.round(13 * k)}px;padding:${Math.round(6 * k)}px ${Math.round(10 * k)}px" data-act="size" data-v="${k}">${['A', 'A', 'A', 'A'][i]}</button>`).join('')}</div></div>
     <div class="frame" style="--c:var(--accent)"><span class="frame-t">Familia</span><div class="bricks">
       ${f.hojaUrl ? `<a class="b" href="${esc(f.hojaUrl)}" target="_blank" rel="noopener">Abrir la hoja de cálculo</a>` : '<span class="b">En modo prueba no hay hoja</span>'}
       </div></div>
@@ -309,7 +315,7 @@ function vOverlay() {
       const uses = f.lista.filter(r => !r.comprado && (isP ? r.personaId === x.id : r.superId === x.id)).length;
       const other = isP ? null : supers().find(s => s.id !== x.id);
       h += `<div class="veil" data-act="closePop"></div><div class="pop" id="pop">
-        <div class="pop-row">${PALETTE.map(c => `<button class="pp ${c === x.color ? 'on' : ''}" style="--c:${c};width:26px;height:26px" data-act="pickColor" data-v="${c}" aria-label="Color"></button>`).join('')}</div>
+        <div class="pop-row">${PALETTE.map(c => `<button class="pp ${c === x.color ? 'on' : ''}" style="--c:${c};width:calc(26px*var(--k));height:calc(26px*var(--k))" data-act="pickColor" data-v="${c}" aria-label="Color"></button>`).join('')}</div>
         <div class="pop-row">${S.pop.confirm
           ? `<span class="pmsg">¿Quitar ${esc(x.nombre)}?${uses ? `<br><span class="count">${uses} en la lista ${isP ? 'se quedan sin persona' : 'pasan a ' + esc(other ? other.nombre : '')}</span>` : ''}</span><button class="pq" data-act="closePop" style="font-size:13px">No</button><button class="pq red" data-act="delOk">Quitar</button>`
           : `<button class="pq" data-act="rename" style="font-size:13px">Renombrar</button><button class="pq del" data-act="del" style="margin-left:0">✕ Quitar</button>`}</div>
@@ -421,6 +427,7 @@ document.addEventListener('click', e => {
   if (el.classList.contains('scrim') && e.target.closest('[data-stop]')) return;
   const a = el.dataset.act, v = el.dataset.v;
   switch (a) {
+    case 'size': LS.set('k', Number(v)); applySize(Number(v)); render(true); break;
     case 'retry': S.noauth = ''; S.err = ''; render(); refresh(); break;
     case 'view': S.view = v; S.pop = null; S.adding = null; render(); break;
     case 'closeSheet': if (el.classList.contains('scrim') && e.target !== el) return; S.sheet = null; renderOverlay(); break;
