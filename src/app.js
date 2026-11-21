@@ -21,6 +21,7 @@ const uid = () => Math.random().toString(36).slice(2, 10);
 const ICON = {
   paste: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4h8v3H8z"/><path d="M16 5h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2"/><path d="M8 12h8M8 16h5"/></svg>',
   gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
+  plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
   back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>',
   play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg>',
   pause: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4.5" width="4.2" height="15" rx="1"/><rect x="13.8" y="4.5" width="4.2" height="15" rx="1"/></svg>',
@@ -105,11 +106,13 @@ function renderHome() {
   </div>
   <div class="stack">
     ${resumable ? `<div class="banner row"><div style="flex:1"><b>Entreno a medias</b><div>${esc(resumable.title)}</div></div><button class="btn primary" data-act="resume">Reanudar</button><button class="btn ghost" data-act="discard">Descartar</button></div>` : ''}
-    <button class="cta" data-act="import"><span class="ic">${ICON.paste}</span><span><b>Pegar mensaje del entrenador</b><span>Copia el WhatsApp y lo convierto en intervalos</span></span></button>
-    <button class="btn big" data-act="manual">+ Crear entrenamiento a mano</button>
+    <div class="ctas">
+      <button class="cta2" data-act="manual"><span class="ic">${ICON.plus}</span><b>Crear</b><span>A mano, con ruedas de tiempo</span></button>
+      <button class="cta2 dark" data-act="import"><span class="ic">${ICON.paste}</span><b>Pegar</b><span>El WhatsApp del entrenador</span></button>
+    </div>
     <div class="row" style="margin-top:8px"><h2>Mis entrenamientos</h2><div class="spacer"></div><span class="muted num">${list.length}</span></div>
     <div class="legend">${legend()}</div>
-    ${list.length ? '' : '<p class="muted">Todavía no hay entrenamientos. Pega el primero arriba.</p>'}
+    ${list.length ? '' : '<p class="muted">Todavía no hay entrenamientos. Crea o pega el primero arriba.</p>'}
     ${list.map(w => { const st = buildSteps(w); return `
       <article class="card wcard">
         <div class="t">${esc(w.title)}</div>
