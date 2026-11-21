@@ -29,7 +29,7 @@ const ICON = {
 };
 
 /* ---------- ajustes ---------- */
-const DEFAULTS = { voice: true, voiceURI: '', rate: 1, prewarn: 10, beeps: true, detail: 'full', paceRun: 420, paceWalk: 600, gps: true, theme: '' };
+const DEFAULTS = { voice: true, voiceURI: '', rate: 1, prewarn: 10, beeps: true, detail: 'full', paceRun: 420, paceWalk: 600, gps: true, theme: '', duck: true };
 let S = Object.assign({}, DEFAULTS, store.get('rc.settings', {}));
 const saveS = () => store.set('rc.settings', S);
 if (S.theme) document.documentElement.setAttribute('data-theme', S.theme);
@@ -275,6 +275,7 @@ function renderSettings() {
     <div class="set"><label for="s-rate">Velocidad de la voz<small class="num" id="s-rate-v">${S.rate.toFixed(1)}×</small></label><input type="range" id="s-rate" min="0.7" max="1.4" step="0.1" value="${S.rate}" style="width:45%"></div>
     <div class="set"><label>Qué dice al empezar<small>${S.detail === 'full' ? 'Tipo, duración, esfuerzo, bloque y cuántos quedan' : 'Tipo, duración y esfuerzo'}</small></label><div class="seg"><button data-act="detail" data-v="full" aria-pressed="${S.detail === 'full'}">Todo</button><button data-act="detail" data-v="short" aria-pressed="${S.detail === 'short'}">Breve</button></div></div>
     <div class="set"><label>Aviso del siguiente<small>Segundos antes de acabar</small></label><div class="seg">${[5, 10, 15, 20].map(n => `<button data-act="prewarn" data-v="${n}" aria-pressed="${S.prewarn === n}">${n}</button>`).join('')}</div></div>
+    <div class="set"><label for="s-duck">Bajar la música en los avisos<small>Prueba: en Chrome para Android suele bajar Spotify o YouTube Music mientras habla</small></label><input class="switch" type="checkbox" id="s-duck" ${S.duck ? 'checked' : ''}></div>
     <div class="set"><label for="s-beeps">Pitidos 3-2-1<small>Antes de cada cambio</small></label><input class="switch" type="checkbox" id="s-beeps" ${S.beeps ? 'checked' : ''}></div>
     <button class="btn" data-act="test-voice">${ICON.voiceOn} Probar la voz</button>
     <h2 style="margin-top:6px">Series por distancia</h2>
@@ -293,6 +294,7 @@ function renderSettings() {
   sh.hidden = false;
   const on = (id, ev, fn) => { const el = document.getElementById(id); if (el) el.addEventListener(ev, fn); };
   on('s-voice', 'change', e => { S.voice = e.target.checked; saveS(); });
+  on('s-duck', 'change', e => { S.duck = e.target.checked; saveS(); });
   on('s-beeps', 'change', e => { S.beeps = e.target.checked; saveS(); });
   on('s-gps', 'change', e => { S.gps = e.target.checked; saveS(); });
   on('s-vsel', 'change', e => { S.voiceURI = e.target.value; saveS(); });
@@ -305,8 +307,8 @@ try { speechSynthesis.onvoiceschanged = () => { if (!$('#sheet').hidden) renderS
 
 /* ---------- audio y voz ---------- */
 let ac = null, keep = null;
-function silentWav() {
-  const sr = 8000, n = sr * 2, buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
+function silentWav(secs = 2) {
+  const sr = 8000, n = Math.round(sr * secs), buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
   const w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
   w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
   v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n * 2, true);
@@ -317,6 +319,7 @@ function silentWav() {
 function primeAudio() {
   try { if (!ac) ac = new (window.AudioContext || window.webkitAudioContext)(); if (ac.state === 'suspended') ac.resume(); } catch (e) {}
   try { if (!keep) { keep = new Audio(silentWav()); keep.loop = true; keep.volume = 0.05; } keep.play().catch(() => {}); } catch (e) {}
+  try { if (S.duck && !duckEl) { duck(); } } catch (e) {}
   try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); } catch (e) {}
 }
 function beep(kind) {
@@ -329,11 +332,23 @@ function beep(kind) {
     if (kind === 'go') { const o2 = ac.createOscillator(), g2 = ac.createGain(); o2.frequency.value = 1318; g2.gain.setValueAtTime(0.0001, t + 0.16); g2.gain.exponentialRampToValueAtTime(0.4, t + 0.18); g2.gain.exponentialRampToValueAtTime(0.0001, t + 0.6); o2.connect(g2).connect(ac.destination); o2.start(t + 0.15); o2.stop(t + 0.65); }
   } catch (e) {}
 }
+let duckEl = null;
+function duck() {
+  if (!S.duck) return;
+  try {
+    if (!duckEl) {
+      duckEl = new Audio(silentWav(4));
+      duckEl.addEventListener('ended', () => { try { if (speechSynthesis.speaking) { duckEl.currentTime = 0; duckEl.play().catch(() => {}); } } catch (e) {} });
+    }
+    duckEl.currentTime = 0; duckEl.play().catch(() => {});
+  } catch (e) {}
+}
 function say(text, interrupt) {
   if (!S.voice) return;
   if (!('speechSynthesis' in window)) { if (!say.warned) { say.warned = true; toast('Este navegador no tiene voz. Usa Chrome.', 6000); } return; }
   try {
     const go = () => {
+      duck();
       const u = new SpeechSynthesisUtterance(text);
       const vs = voices(); const v = vs.find(x => x.voiceURI === S.voiceURI) || vs.find(x => /es[-_]ES/i.test(x.lang)) || vs[0];
       if (v) u.voice = v; u.lang = v ? v.lang : 'es-ES'; u.rate = S.rate; u.volume = 1;
