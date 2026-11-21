@@ -76,6 +76,13 @@ function applyOp(st, op, email) {
     case 'setProductSuper': { const p = st.productos.find(x => x.id === op.productoId); if (p) p.superId = op.superId; break; }
     case 'moveProduct': { const p = st.productos.find(x => x.id === op.productoId); if (p) p.categoriaId = op.categoriaId; break; }
     case 'addCategory': if (!st.categorias.some(c => c.id === op.id)) st.categorias.push({ id: op.id, nombre: op.nombre, color: op.color, orden: st.categorias.length + 1 }); break;
+    case 'moveCategory': {
+      const cs = st.categorias.slice().sort((a, b) => (Number(a.orden) || 0) - (Number(b.orden) || 0));
+      const i = cs.findIndex(c => c.id === op.id), j = i + op.dir;
+      if (i >= 0 && j >= 0 && j < cs.length) { const t = cs[i]; cs[i] = cs[j]; cs[j] = t; }
+      cs.forEach((c, k) => { c.orden = k + 1; });
+      break;
+    }
     case 'restoreProduct': { const p = st.productos.find(x => x.id === op.productoId); if (p) p.activo = true; break; }
     case 'removeProduct': { const p = st.productos.find(x => x.id === op.productoId); if (p) p.activo = false; st.lista = st.lista.filter(r => r.productoId !== op.productoId); break; }
     case 'upsertPersona': {
@@ -251,10 +258,10 @@ function brickCatalog(p) {
 }
 function vCatalog() {
   const f = F();
-  let h = `<div class="top"><span class="fam-btn"><span class="fam-name">${esc(f.nombre)}</span>${DEMO ? '<span class="demo-tag">PRUEBA</span>' : ''}</span>${S.editCat ? '<button class="btn pri" data-act="editDone">Terminar</button>' : `<span class="count">${syncDot()}${listCount()} en la lista</span>`}</div>${S.editCat ? '<p class="hint" style="margin:0 0 12px">Arrastra un producto a otra categoría para moverlo. Toca ✕ para quitarlo del catálogo.</p>' : ''}<div class="frames">`;
+  let h = `<div class="top"><span class="fam-btn"><span class="fam-name">${esc(f.nombre)}</span>${DEMO ? '<span class="demo-tag">PRUEBA</span>' : ''}</span>${S.editCat ? '<button class="btn pri" data-act="editDone">Terminar</button>' : `<span class="count">${syncDot()}${listCount()} en la lista</span>`}</div>${S.editCat ? '<p class="hint" style="margin:0 0 12px">Arrastra un producto a otra categoría para moverlo. Toca ✕ para quitarlo. Ordena las categorías con ▲ ▼.</p>' : ''}<div class="frames">`;
   act(f.categorias.map(c => Object.assign({ activo: true }, c))).forEach(c => {
     const ps = act(f.productos).filter(p => p.categoriaId === c.id);
-    h += `<div class="frame" data-cat="${c.id}" style="--c:${c.color}"><span class="frame-t">${esc(c.nombre)}</span><div class="bricks">${ps.map(brickCatalog).join('')}${S.editCat ? '' : `<button class="b dash" data-act="newProduct" data-cat="${c.id}">Nuevo</button>`}</div></div>`;
+    h += `<div class="frame" data-cat="${c.id}" style="--c:${c.color}"><span class="frame-t">${esc(c.nombre)}${S.editCat ? `<button class="mv" data-act="catMove" data-id="${c.id}" data-v="-1" aria-label="Subir">▲</button><button class="mv" data-act="catMove" data-id="${c.id}" data-v="1" aria-label="Bajar">▼</button>` : ''}</span><div class="bricks">${ps.map(brickCatalog).join('')}${S.editCat ? '' : `<button class="b dash" data-act="newProduct" data-cat="${c.id}">Nuevo</button>`}</div></div>`;
   });
   if (S.editCat) h += `<button class="b dash" data-act="newCategory" style="align-self:flex-start;font-size:calc(15px*var(--k))">+ Nueva categoría</button>`;
   return h + '</div><div style="height:12px"></div>';
@@ -449,6 +456,7 @@ document.addEventListener('click', e => {
   const a = el.dataset.act, v = el.dataset.v;
   switch (a) {
     case 'theme': LS.set('theme', v); applyTheme(v); render(true); break;
+    case 'catMove': doOp({ op: 'moveCategory', id: el.dataset.id, dir: Number(v) }); break;
     case 'newCategory': S.sheet = { type: 'newCategory' }; renderOverlay(); break;
     case 'saveCategory': {
       const nm = document.getElementById('newCatName').value.trim(); if (!nm) return;

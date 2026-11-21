@@ -21,6 +21,7 @@ global.Session={getScriptTimeZone:()=>'UTC',getActiveUser:()=>({getEmail:()=>'o@
 global.LockService={getDocumentLock:()=>({waitLock(){},releaseLock(){}})};
 global.HtmlService={};
 eval(fs.readFileSync(require('path').join(__dirname,'Code.gs'),'utf8')+';global.api=api;global.ensureTabs=ensureTabs;');
+ensureTabs(ss);ss.getSheetByName('Config').appendRow(['o@gmail.com','Toño']);
 let r=api('load',{});
 const P=()=>ss.getSheetByName('Productos').d;
 console.log(P()[0].join(','),'|',P()[1].join(','));
@@ -29,5 +30,8 @@ const pr=ss.getSheetByName('Productos');pr.d[0][2]='categoriaId';pr.d[0][3]='sup
 pr.appendRow(['','Champú','higiene','lidl','','']);
 r=api('load',{});console.log(P()[0].join(','),'|',P()[1].join(','),'|',P()[P().length-1].join(','));
 console.log(r.state.productos[0].categoriaId,r.state.productos[0].superId, r.state.productos.at(-1));
-r=api('ops',{ops:[{op:'upsertSuper',id:'s2',nombre:'LIDL Astorga',color:'#000',logo:'lidl'},{op:'setItem',productoId:'p001',cantidad:2,personaId:'',superId:'s2'},{op:'buy',productoId:'p001',value:true}]});
+r=api('ops',{ops:[{op:'moveCategory',id:'c2',dir:-1},{op:'upsertSuper',id:'s2',nombre:'LIDL Astorga',color:'#000',logo:'lidl'},{op:'setItem',productoId:'p001',cantidad:2,personaId:'',superId:'s2'},{op:'buy',productoId:'p001',value:true}]});
 console.log(P()[1].join(','),'|',ss.getSheetByName('Historial').d.map(x=>x.join(',')).join(' / '));
+
+console.log(ss.getSheetByName('Categorias').d.map(x=>x.slice(1,4).join(':')).join(' / '));
+try{global.Session.getActiveUser=()=>({getEmail:()=>'x@gmail.com'});api('load',{})}catch(e){console.log('bloqueado:',e.message.slice(0,60))}

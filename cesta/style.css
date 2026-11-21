@@ -54,6 +54,7 @@ button:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(-
 .b.kill .grip{opacity:.5;font-size:calc(12px*var(--k))}
 .b.kill .x{border:0;background:none;padding:0 calc(5px*var(--k));font:inherit;color:var(--danger);font-weight:800}
 .b.dragging{opacity:.3}
+.frame-t .mv{border:1.5px solid var(--c);background:var(--bg);color:var(--c);border-radius:6px;font-size:calc(11px*var(--k));line-height:1;padding:calc(3px*var(--k)) calc(7px*var(--k));margin-left:calc(4px*var(--k))}
 .ghost{position:fixed;z-index:50;pointer-events:none;box-shadow:0 8px 20px rgba(0,0,0,.3);transform:scale(1.08);background:var(--surface)}
 .frame.drop{background:color-mix(in srgb,var(--c) 14%,transparent)}
 .frames > .b.dash{align-self:flex-start}

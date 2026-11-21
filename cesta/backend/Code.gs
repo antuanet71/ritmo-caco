@@ -1,3 +1,5 @@
+/** @OnlyCurrentDoc */
+
 /**
  * Cesta: la lista de la compra de la familia, dentro de esta hoja de cálculo.
  *
@@ -63,9 +65,8 @@ function currentUser() {
   const email = normEmail(Session.getActiveUser().getEmail());
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const allowed = configEmails(ss);
-  const owner = normEmail(ss.getOwner() ? ss.getOwner().getEmail() : '');
   if (!email) throw new Error('NOAUTH: Google no le dice a Cesta con qué cuenta has entrado. Quien gestiona la hoja debe revisar en Implementar › Gestionar implementaciones que «Ejecutar como» sea «Usuario que accede a la aplicación web».');
-  if (email !== owner && allowed.indexOf(email) < 0) throw new Error('NOAUTH: Has entrado como ' + email + ' y ese correo no está en la pestaña Config. Si tienes otra cuenta de Google en el móvil, abre la app con la cuenta correcta (o en una ventana de incógnito).');
+  if (allowed.indexOf(email) < 0) throw new Error('NOAUTH: Has entrado como ' + email + ' y ese correo no está en la pestaña Config. Si tienes otra cuenta de Google en el móvil, abre la app con la cuenta correcta (o en una ventana de incógnito).');
   const row = read(tab(ss, 'Config')).find(r => normEmail(r.correo) === email);
   return { email: email, nombre: (row && row.nombre) || email.split('@')[0] };
 }
@@ -88,9 +89,12 @@ function preparar() {
 function darAcceso() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const emails = configEmails(ss);
-  const have = ss.getEditors().map(u => u.getEmail().toLowerCase());
+  let have = [];
+  try { have = ss.getEditors().map(u => u.getEmail().toLowerCase()); } catch (err) {}
   const nuevos = emails.filter(e => have.indexOf(e) < 0);
-  nuevos.forEach(e => { try { ss.addEditor(e); } catch (err) { /* correo no válido */ } });
+  const fallos = [];
+  nuevos.forEach(e => { try { ss.addEditor(e); } catch (err) { fallos.push(e); } });
+  if (fallos.length) { SpreadsheetApp.getUi().alert('No he podido compartir con: ' + fallos.join(', ') + '. Compártela con el botón Compartir (como editor).'); return; }
   SpreadsheetApp.getActive().toast(nuevos.length ? 'Acceso dado a: ' + nuevos.join(', ') : 'Todos los correos ya tenían acceso.', 'Cesta', 8);
 }
 
@@ -273,6 +277,13 @@ function applyOps(user, ops) {
         case 'addCategory':
           if (!st.categorias.some(c => c.id === op.id)) st.categorias.push({ id: op.id, nombre: op.nombre, color: op.color, orden: st.categorias.length + 1 });
           dirty.Categorias = true; break;
+        case 'moveCategory': {
+          const cs = st.categorias.slice().sort((a, b) => (Number(a.orden) || 0) - (Number(b.orden) || 0));
+          const i = cs.findIndex(c => c.id === op.id), j = i + op.dir;
+          if (i >= 0 && j >= 0 && j < cs.length) { const t = cs[i]; cs[i] = cs[j]; cs[j] = t; }
+          cs.forEach((c, k) => { c.orden = k + 1; });
+          dirty.Categorias = true; break;
+        }
         case 'restoreProduct': { const p = st.productos.find(x => x.id === op.productoId); if (p) { p.activo = true; dirty.Productos = true; } break; }
         case 'removeProduct': { const p = st.productos.find(x => x.id === op.productoId); if (p) p.activo = false; st.lista = st.lista.filter(x => x.productoId !== op.productoId); dirty.Productos = dirty.Lista = true; break; }
         case 'upsertPersona': {
