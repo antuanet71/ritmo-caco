@@ -12,7 +12,7 @@
 const TABS = {
   Config: ['correo', 'nombre'],
   Categorias: ['id', 'nombre', 'color', 'orden'],
-  Productos: ['id', 'nombre', 'categoriaId', 'superId', 'orden', 'activo'],
+  Productos: ['id', 'nombre', 'categoria', 'super', 'orden', 'activo'],
   Personas: ['id', 'nombre', 'color', 'orden', 'activo'],
   Supers: ['id', 'nombre', 'color', 'logo', 'orden', 'activo'],
   Lista: ['productoId', 'cantidad', 'personaId', 'superId', 'comprado', 'actualizado', 'por'],
@@ -106,8 +106,9 @@ function ensureTabs(ss) {
   if (isNew) {
     write(tab(ss, 'Categorias'), SEED_CATS.map((c, i) => ({ id: c[0], nombre: c[1], color: c[2], orden: i + 1 })));
     const prods = []; let n = 0;
-    SEED_CATS.forEach(c => SEED_PRODUCTS[c[0]].forEach(name => { n++; prods.push({ id: 'p' + ('00' + n).slice(-3), nombre: name, categoriaId: c[0], superId: 's1', orden: n, activo: true }); }));
+    SEED_CATS.forEach(c => SEED_PRODUCTS[c[0]].forEach(name => { n++; prods.push({ id: 'p' + ('00' + n).slice(-3), nombre: name, categoria: c[1], super: 'Mercadona', orden: n, activo: true }); }));
     write(tab(ss, 'Productos'), prods);
+    productDropdowns(ss);
     write(tab(ss, 'Personas'), [{ id: 'pe1', nombre: 'Yo', color: '#3B6FD8', orden: 1, activo: true }]);
     write(tab(ss, 'Supers'), [
       { id: 's1', nombre: 'Mercadona', color: '#1E8E57', logo: 'mercadona', orden: 1, activo: true },
@@ -151,20 +152,56 @@ function startOfToday() {
 
 /* ---------------- datos ---------------- */
 // Lee todo y completa lo escrito a mano (ids que faltan, categoría o súper escritos por nombre…)
+// En la hoja, Productos muestra la categoría y el súper por su nombre (con desplegable).
+function migrateProductHeaders(ss) {
+  const sh = tab(ss, 'Productos'), h = headersOf(sh);
+  let changed = false;
+  [['categoriaId', 'categoria'], ['superId', 'super']].forEach(([a, b]) => {
+    const i = h.indexOf(a);
+    if (i >= 0) { sh.getRange(1, i + 1).setValue(b); changed = true; }
+  });
+  if (changed) productDropdowns(ss);
+  return changed;
+}
+function productDropdowns(ss) {
+  const sh = tab(ss, 'Productos'), h = headersOf(sh);
+  const set = (col, srcTab) => {
+    const i = h.indexOf(col); if (i < 0) return;
+    const rule = SpreadsheetApp.newDataValidation().requireValueInRange(tab(ss, srcTab).getRange('B2:B'), true).setAllowInvalid(true).build();
+    sh.getRange(2, i + 1, 999, 1).setDataValidation(rule);
+  };
+  set('categoria', 'Categorias'); set('super', 'Supers');
+}
+function productsToSheet(st) {
+  const nm = (arr, id) => (arr.find(x => x.id === id) || {}).nombre || '';
+  return st.productos.map(p => Object.assign({}, p, { categoria: nm(st.categorias, p.categoriaId), super: nm(st.supers, p.superId) }));
+}
 function readState(ss, user) {
+  const migrated = migrateProductHeaders(ss);
   const st = {
     id: 'fam', nombre: ss.getName().replace(/^Cesta\s*[·\-:]\s*/i, ''), hojaUrl: ss.getUrl(), user: user,
     categorias: read(tab(ss, 'Categorias')), productos: read(tab(ss, 'Productos')), personas: read(tab(ss, 'Personas')),
     supers: read(tab(ss, 'Supers')), lista: read(tab(ss, 'Lista'))
   };
   const dirty = {};
+  if (migrated) dirty.Productos = true;
+  st.productos.forEach(p => {
+    if (p.categoria !== undefined) p.categoriaId = p.categoria;
+    if (p.super !== undefined) p.superId = p.super;
+    delete p.categoria; delete p.super;
+  });
   const fixIds = (arr, p, k) => arr.forEach((x, i) => { if (!x.id) { x.id = rid(p); dirty[k] = true; } if (x.orden === '' || x.orden === undefined) x.orden = i + 1; });
   fixIds(st.categorias, 'c', 'Categorias'); fixIds(st.productos, 'p', 'Productos'); fixIds(st.personas, 'pe', 'Personas'); fixIds(st.supers, 's', 'Supers');
   const byName = (arr, v) => { const x = arr.find(a => a.id === v) || arr.find(a => String(a.nombre).toLowerCase() === String(v).toLowerCase()); return x ? x.id : ''; };
   st.categorias.forEach(c => { if (!c.color) { c.color = '#6B7A75'; dirty.Categorias = true; } });
   st.productos.forEach(p => {
-    const c = byName(st.categorias, p.categoriaId); if (c !== p.categoriaId) { p.categoriaId = c || (st.categorias[0] || {}).id; dirty.Productos = true; }
-    const s = byName(st.supers, p.superId); if (s !== p.superId) { p.superId = s || (st.supers[0] || {}).id; dirty.Productos = true; }
+    const nameOf = (arr, id) => (arr.find(a => a.id === id) || {}).nombre;
+    const c = byName(st.categorias, p.categoriaId) || (st.categorias[0] || {}).id;
+    if (nameOf(st.categorias, c) !== p.categoriaId) dirty.Productos = true;
+    p.categoriaId = c;
+    const s = byName(st.supers, p.superId) || (st.supers[0] || {}).id;
+    if (nameOf(st.supers, s) !== p.superId) dirty.Productos = true;
+    p.superId = s;
     p.activo = bool(p.activo);
   });
   st.personas.forEach(p => { p.activo = bool(p.activo); if (!p.color) { p.color = '#3B6FD8'; dirty.Personas = true; } });
@@ -177,7 +214,8 @@ function readState(ss, user) {
   return { st: st, dirty: dirty };
 }
 function saveDirty(ss, st, dirty) {
-  const map = { Categorias: st.categorias, Productos: st.productos, Personas: st.personas, Supers: st.supers, Lista: st.lista };
+  if (dirty.Categorias || dirty.Supers) dirty.Productos = true;
+  const map = { Categorias: st.categorias, Productos: productsToSheet(st), Personas: st.personas, Supers: st.supers, Lista: st.lista };
   Object.keys(dirty).forEach(k => { if (map[k]) write(tab(ss, k), map[k]); });
 }
 function loadState(user) {
