@@ -52,15 +52,21 @@ function api(action, p) {
   throw new Error('Acción desconocida');
 }
 
+function normEmail(x) { return String(x || '').replace(/mailto:/i, '').replace(/[\s\u00a0\u200b-\u200d\ufeff<>]/g, '').toLowerCase(); }
+// Todos los correos escritos en Config (en cualquier celda, también si se borró la cabecera)
+function configEmails(ss) {
+  const out = [];
+  tab(ss, 'Config').getDataRange().getValues().forEach(r => r.forEach(c => { const e = normEmail(c); if (/^[^@]+@[^@]+\.[^@]+$/.test(e)) out.push(e); }));
+  return out;
+}
 function currentUser() {
-  const email = String(Session.getActiveUser().getEmail() || '').toLowerCase();
+  const email = normEmail(Session.getActiveUser().getEmail());
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const cfg = read(tab(ss, 'Config'));
-  const allowed = cfg.map(r => String(r.correo).trim().toLowerCase()).filter(Boolean);
-  const owner = String(ss.getOwner() ? ss.getOwner().getEmail() : '').toLowerCase();
-  if (!email) throw new Error('NOAUTH: Entra con tu cuenta de Google para usar Cesta.');
-  if (email !== owner && allowed.indexOf(email) < 0) throw new Error('NOAUTH: ' + email + ' no está en la pestaña Config de esta familia. Pide que te añadan.');
-  const row = cfg.find(r => String(r.correo).trim().toLowerCase() === email);
+  const allowed = configEmails(ss);
+  const owner = normEmail(ss.getOwner() ? ss.getOwner().getEmail() : '');
+  if (!email) throw new Error('NOAUTH: Google no le dice a Cesta con qué cuenta has entrado. Quien gestiona la hoja debe revisar en Implementar › Gestionar implementaciones que «Ejecutar como» sea «Usuario que accede a la aplicación web».');
+  if (email !== owner && allowed.indexOf(email) < 0) throw new Error('NOAUTH: Has entrado como ' + email + ' y ese correo no está en la pestaña Config. Si tienes otra cuenta de Google en el móvil, abre la app con la cuenta correcta (o en una ventana de incógnito).');
+  const row = read(tab(ss, 'Config')).find(r => normEmail(r.correo) === email);
   return { email: email, nombre: (row && row.nombre) || email.split('@')[0] };
 }
 
@@ -81,7 +87,7 @@ function preparar() {
 }
 function darAcceso() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const emails = read(tab(ss, 'Config')).map(r => String(r.correo).trim().toLowerCase()).filter(e => /@/.test(e));
+  const emails = configEmails(ss);
   const have = ss.getEditors().map(u => u.getEmail().toLowerCase());
   const nuevos = emails.filter(e => have.indexOf(e) < 0);
   nuevos.forEach(e => { try { ss.addEditor(e); } catch (err) { /* correo no válido */ } });
